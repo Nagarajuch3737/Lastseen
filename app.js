@@ -135,32 +135,63 @@ class LastSeenApp {
         // Create edit modal
         const modal = document.createElement('div');
         modal.className = 'edit-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-labelledby', `editTitle-${id}`);
         modal.innerHTML = `
             <div class="edit-backdrop"></div>
             <div class="edit-content">
-                <h3>Edit Item</h3>
+                <h3 id="editTitle-${id}">Edit Item</h3>
                 <form id="editForm-${id}">
                     <div class="form-group">
-                        <label for="editName-${id}">Item name</label>
-                        <input type="text" id="editName-${id}" value="${item.name}" required>
+                        <label for="editName-${id}" class="form-label">
+                            <span>Item name</span>
+                            <span class="label-required" aria-label="required">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            id="editName-${id}" 
+                            class="form-input"
+                            value="${this.escapeHtml(item.name)}" 
+                            required
+                            aria-required="true"
+                            aria-describedby="editNameHelp-${id}"
+                            placeholder="Enter item name"
+                        >
+                        <small id="editNameHelp-${id}" class="form-help">Update the name of your item</small>
                     </div>
                     <div class="form-group">
-                        <label for="editNotes-${id}">Notes</label>
-                        <textarea id="editNotes-${id}" rows="2">${item.notes || ''}</textarea>
+                        <label for="editNotes-${id}" class="form-label">
+                            <span>Notes</span>
+                            <span class="label-optional" aria-label="optional">(optional)</span>
+                        </label>
+                        <textarea 
+                            id="editNotes-${id}" 
+                            class="form-textarea"
+                            aria-describedby="editNotesHelp-${id}"
+                            placeholder="Add any additional notes..."
+                        >${this.escapeHtml(item.notes || '')}</textarea>
+                        <small id="editNotesHelp-${id}" class="form-help">Add any extra information</small>
                     </div>
                     <div class="edit-actions">
-                        <button type="button" class="btn btn-secondary" id="cancelEdit-${id}">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save</button>
+                        <button type="button" class="btn btn-secondary" id="cancelEdit-${id}" aria-label="Cancel editing">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" aria-label="Save changes">
+                            Save Changes
+                        </button>
                     </div>
                 </form>
             </div>
         `;
 
         document.body.appendChild(modal);
-        modal.classList.add('active');
+        // Use setTimeout to trigger animation
+        setTimeout(() => modal.classList.add('active'), 10);
 
         // Focus on name input
-        document.getElementById(`editName-${id}`).focus();
+        const nameInput = document.getElementById(`editName-${id}`);
+        nameInput.focus();
+        nameInput.select();
 
         // Setup event listeners
         const form = document.getElementById(`editForm-${id}`);
@@ -168,7 +199,9 @@ class LastSeenApp {
         const backdrop = modal.querySelector('.edit-backdrop');
 
         const closeModal = () => {
-            modal.remove();
+            modal.classList.remove('active');
+            setTimeout(() => modal.remove(), 300);
+            document.removeEventListener('keydown', handleEscape);
         };
 
         form.addEventListener('submit', async (e) => {
@@ -192,10 +225,21 @@ class LastSeenApp {
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
                 closeModal();
-                document.removeEventListener('keydown', handleEscape);
             }
         };
         document.addEventListener('keydown', handleEscape);
+    }
+
+    escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
     }
 
     async updateItem(id, updates) {
