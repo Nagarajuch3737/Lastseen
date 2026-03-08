@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LastSeen - Track When You Last Used Things</title>
+    <link rel="stylesheet" href="styles.css">
+    <meta name="description" content="Track when you added or last used any product or event">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">LastSeen</h1>
+            <p class="subtitle">Track when you last used things</p>
+        </header>
+
+        <main class="main">
+            <section class="add-item-section" aria-labelledby="add-item-heading">
+                <h2 id="add-item-heading" class="sr-only">Add New Item</h2>
+                <form class="add-item-form" id="addItemForm">
+                    <div class="form-group">
+                        <label for="itemName" class="form-label">Item name *</label>
+                        <input 
+                            type="text" 
+                            id="itemName" 
+                            name="name" 
+                            class="form-input" 
+                            placeholder="e.g., Toothbrush, Movie ticket, Gym membership"
+                            required
+                            aria-describedby="name-help"
+                        >
+                        <small id="name-help" class="form-help">Enter the name of the item you want to track</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="itemNotes" class="form-label">Notes (optional)</label>
+                        <textarea 
+                            id="itemNotes" 
+                            name="notes" 
+                            class="form-textarea" 
+                            placeholder="Any additional notes about this item..."
+                            rows="2"
+                            aria-describedby="notes-help"
+                        ></textarea>
+                        <small id="notes-help" class="form-help">Add any extra information you want to remember</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-icon">+</span>
+                        Add Item
+                    </button>
+                </form>
+            </section>
+
+            <section class="items-section" aria-labelledby="items-heading">
+                <div class="section-header">
+                    <h2 id="items-heading" class="section-title">Your Items</h2>
+                    <div class="section-actions">
+                        <button class="btn btn-secondary" id="exportBtn" aria-label="Export items to JSON">
+                            <span class="btn-icon">📤</span>
+                            Export
+                        </button>
+                        <button class="btn btn-secondary" id="importBtn" aria-label="Import items from JSON">
+                            <span class="btn-icon">📥</span>
+                            Import
+                        </button>
+                        <input type="file" id="importFile" accept=".json" style="display: none;">
+                    </div>
+                </div>
+                
+                <div class="items-container" id="itemsContainer">
+                    <div class="loading" id="loading">
+                        <div class="spinner" aria-hidden="true"></div>
+                        <span>Loading your items...</span>
+                    </div>
+                    <div class="empty-state" id="emptyState" style="display: none;">
+                        <div class="empty-icon" aria-hidden="true">📝</div>
+                        <h3>No items yet</h3>
+                        <p>Start tracking when you last used things by adding your first item above.</p>
+                    </div>
+                    <ul class="items-list" id="itemsList" style="display: none;" role="list">
+                        <!-- Items will be dynamically added here -->
+                    </ul>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>LastSeen - Track your usage patterns</p>
+        </footer>
+    </div>
+
+    <!-- Tooltip Modal -->
+    <div class="tooltip-modal" id="tooltipModal" role="dialog" aria-labelledby="tooltip-title" aria-hidden="true">
+        <div class="tooltip-content">
+            <h3 id="tooltip-title" class="tooltip-title"></h3>
+            <p class="tooltip-date"></p>
+            <p class="tooltip-iso"></p>
+            <button class="tooltip-close" id="tooltipClose" aria-label="Close tooltip">×</button>
+        </div>
+        <div class="tooltip-backdrop" id="tooltipBackdrop"></div>
+    </div>
+
+    <!-- Status Messages -->
+    <div class="status-container" id="statusContainer" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
