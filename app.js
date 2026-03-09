@@ -103,8 +103,7 @@ class LastSeenApp {
                     id: this.generateUUID(),
                     name: newItem.name,
                     notes: newItem.notes || '',
-                    createdAt: new Date().toISOString(),
-                    updatedAt: null
+                    createdAt: new Date().toISOString()
                 };
                 this.items.push(createdItem);
                 this.saveToLocalStorage();
@@ -128,9 +127,23 @@ class LastSeenApp {
         }
     }
 
+    formatDatetimeForInput(isoString) {
+        // Convert ISO string to datetime-local format (YYYY-MM-DDTHH:mm) in LOCAL time
+        const date = new Date(isoString);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
     async editItem(id) {
         const item = this.items.find(i => i.id === id);
         if (!item) return;
+
+        // Format dates for input fields
+        const createdDateValue = this.formatDatetimeForInput(item.createdAt);
 
         // Create edit modal
         const modal = document.createElement('div');
@@ -140,7 +153,12 @@ class LastSeenApp {
         modal.innerHTML = `
             <div class="edit-backdrop"></div>
             <div class="edit-content">
-                <h3 id="editTitle-${id}">Edit Item</h3>
+                <div class="edit-header">
+                    <h3 id="editTitle-${id}">Edit Item</h3>
+                    <button type="button" class="edit-close-btn" id="closeEdit-${id}" aria-label="Close editor" title="Close">
+                        ×
+                    </button>
+                </div>
                 <form id="editForm-${id}">
                     <div class="form-group">
                         <label for="editName-${id}" class="form-label">
@@ -172,6 +190,21 @@ class LastSeenApp {
                         >${this.escapeHtml(item.notes || '')}</textarea>
                         <small id="editNotesHelp-${id}" class="form-help">Add any extra information</small>
                     </div>
+                    <div class="datetime-section">
+                        <h4 class="datetime-title">📅 Date & Time (Optional)</h4>
+                        <div class="form-group">
+                            <label for="editCreatedDate-${id}" class="form-label">
+                                <span>Date Added</span>
+                                <span class="label-optional" aria-label="optional">(optional)</span>
+                            </label>
+                            <input 
+                                type="datetime-local" 
+                                id="editCreatedDate-${id}" 
+                                class="form-input"
+                                value="${createdDateValue}"
+                            >
+                        </div>
+                    </div>
                     <div class="edit-actions">
                         <button type="button" class="btn btn-secondary" id="cancelEdit-${id}" aria-label="Cancel editing">
                             Cancel
@@ -195,7 +228,7 @@ class LastSeenApp {
 
         // Setup event listeners
         const form = document.getElementById(`editForm-${id}`);
-        const cancelBtn = document.getElementById(`cancelEdit-${id}`);
+        const closeBtn = document.getElementById(`closeEdit-${id}`);
         const backdrop = modal.querySelector('.edit-backdrop');
 
         const closeModal = () => {
@@ -208,18 +241,27 @@ class LastSeenApp {
             e.preventDefault();
             const newName = document.getElementById(`editName-${id}`).value.trim();
             const newNotes = document.getElementById(`editNotes-${id}`).value.trim();
+            const newCreatedDate = document.getElementById(`editCreatedDate-${id}`).value;
 
             if (!newName) {
                 this.showStatus('Item name cannot be empty', 'error');
                 return;
             }
 
-            await this.updateItem(id, { name: newName, notes: newNotes });
+            const updates = { name: newName, notes: newNotes };
+
+            // If dates are provided, convert to ISO format
+            if (newCreatedDate) {
+                updates.createdAt = new Date(newCreatedDate).toISOString();
+            }
+
+            await this.updateItem(id, updates);
             closeModal();
         });
 
+        const cancelBtn = document.getElementById(`cancelEdit-${id}`);
+        closeBtn.addEventListener('click', closeModal);
         cancelBtn.addEventListener('click', closeModal);
-        backdrop.addEventListener('click', closeModal);
         
         // Close on Escape key
         const handleEscape = (e) => {
@@ -250,7 +292,8 @@ class LastSeenApp {
                 const item = this.items.find(i => i.id === id);
                 if (item) {
                     Object.assign(item, updates);
-                    item.updatedAt = new Date().toISOString();
+                    // Only modify timestamp if user explicitly changed date/time in editor
+                    // For name/notes only changes, preserve existing timestamp
                     updatedItem = item;
                     this.saveToLocalStorage();
                 }
@@ -264,14 +307,8 @@ class LastSeenApp {
                 if (!response.ok) throw new Error('Failed to update item');
                 updatedItem = await response.json();
                 
-                // Also touch the item to update the timestamp
-                const touchResponse = await fetch(`/api/items/${id}/touch`, {
-                    method: 'POST'
-                });
-                
-                if (touchResponse.ok) {
-                    updatedItem = await touchResponse.json();
-                }
+                // Don't automatically touch/update timestamp for name/notes changes
+                // Only the explicit date changes from the editor window will update timestamps
                 
                 const index = this.items.findIndex(i => i.id === id);
                 if (index !== -1) {
@@ -422,7 +459,7 @@ class LastSeenApp {
         const timeElement = document.querySelector(`.item-time[data-id="${itemId}"]`);
         if (!timeElement) return;
 
-        const timestamp = item.updatedAt || item.createdAt;
+        const timestamp = item.createdAt;
         timeElement.textContent = this.formatTimeAgo(new Date(timestamp));
     }
 
@@ -447,7 +484,7 @@ class LastSeenApp {
         const item = this.items.find(i => i.id === itemId);
         if (!item) return 60000; // default to 1 minute
 
-        const timestamp = item.updatedAt || item.createdAt;
+        const timestamp = item.createdAt;
         const now = new Date();
         const diffMs = now - new Date(timestamp);
         const diffMinutes = diffMs / (1000 * 60);
@@ -485,7 +522,7 @@ class LastSeenApp {
         const date = document.querySelector('.tooltip-date');
         const iso = document.querySelector('.tooltip-iso');
 
-        const timestamp = item.updatedAt || item.createdAt;
+        const timestamp = item.createdAt;
         const dateObj = new Date(timestamp);
 
         title.textContent = item.name;
