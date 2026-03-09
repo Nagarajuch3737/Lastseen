@@ -53,8 +53,7 @@ app.post('/api/items', async (req, res) => {
       id: uuidv4(),
       name: name.trim(),
       notes: notes ? notes.trim() : '',
-      createdAt: new Date().toISOString(),
-      updatedAt: null
+      createdAt: new Date().toISOString()
     };
 
     const items = await loadData();
@@ -71,7 +70,7 @@ app.post('/api/items', async (req, res) => {
 app.patch('/api/items/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, notes } = req.body;
+    const { name, notes, createdAt } = req.body;
 
     const items = await loadData();
     const itemIndex = items.findIndex(item => item.id === id);
@@ -91,26 +90,14 @@ app.patch('/api/items/:id', async (req, res) => {
       items[itemIndex].notes = notes ? notes.trim() : '';
     }
 
-    await saveData(items);
-    res.json(items[itemIndex]);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update item' });
-  }
-});
-
-// POST /api/items/:id/touch - mark as used now
-app.post('/api/items/:id/touch', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const items = await loadData();
-    const itemIndex = items.findIndex(item => item.id === id);
-
-    if (itemIndex === -1) {
-      return res.status(404).json({ error: 'Item not found' });
+    // Allow updating createdAt date
+    if (createdAt !== undefined) {
+      const date = new Date(createdAt);
+      if (!isNaN(date.getTime())) {
+        items[itemIndex].createdAt = date.toISOString();
+      }
     }
 
-    items[itemIndex].updatedAt = new Date().toISOString();
     await saveData(items);
     res.json(items[itemIndex]);
   } catch (error) {
