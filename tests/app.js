@@ -103,8 +103,7 @@ class LastSeenApp {
                     id: this.generateUUID(),
                     name: newItem.name,
                     notes: newItem.notes || '',
-                    createdAt: new Date().toISOString(),
-                    updatedAt: null
+                    createdAt: new Date().toISOString()
                 };
                 this.items.push(createdItem);
                 this.saveToLocalStorage();
@@ -128,71 +127,141 @@ class LastSeenApp {
         }
     }
 
+    formatDatetimeForInput(isoString) {
+        // Convert ISO string to datetime-local format (YYYY-MM-DDTHH:mm)
+        const date = new Date(isoString);
+        return date.toISOString().slice(0, 16);
+    }
+
     async editItem(id) {
         const item = this.items.find(i => i.id === id);
         if (!item) return;
 
+        // Format dates for input fields
+        const createdDateValue = this.formatDatetimeForInput(item.createdAt);
+
         // Create edit modal
         const modal = document.createElement('div');
         modal.className = 'edit-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-labelledby', `editTitle-${id}`);
         modal.innerHTML = `
             <div class="edit-backdrop"></div>
             <div class="edit-content">
-                <h3>Edit Item</h3>
+                <div class="edit-header">
+                    <h3 id="editTitle-${id}">Edit Item</h3>
+                    <button type="button" class="edit-close-btn" id="closeEdit-${id}" aria-label="Close editor" title="Close">
+                        ×
+                    </button>
+                </div>
                 <form id="editForm-${id}">
                     <div class="form-group">
-                        <label for="editName-${id}">Item name</label>
-                        <input type="text" id="editName-${id}" value="${item.name}" required>
+                        <label for="editName-${id}" class="form-label">
+                            <span>Item name</span>
+                            <span class="label-required" aria-label="required">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            id="editName-${id}" 
+                            class="form-input"
+                            value="${this.escapeHtml(item.name)}" 
+                            required
+                            aria-required="true"
+                            aria-describedby="editNameHelp-${id}"
+                            placeholder="Enter item name"
+                        >
+                        <small id="editNameHelp-${id}" class="form-help">Update the name of your item</small>
                     </div>
                     <div class="form-group">
-                        <label for="editNotes-${id}">Notes</label>
-                        <textarea id="editNotes-${id}" rows="2">${item.notes || ''}</textarea>
+                        <label for="editNotes-${id}" class="form-label">
+                            <span>Notes</span>
+                            <span class="label-optional" aria-label="optional">(optional)</span>
+                        </label>
+                        <textarea 
+                            id="editNotes-${id}" 
+                            class="form-textarea"
+                            aria-describedby="editNotesHelp-${id}"
+                            placeholder="Add any additional notes..."
+                        >${this.escapeHtml(item.notes || '')}</textarea>
+                        <small id="editNotesHelp-${id}" class="form-help">Add any extra information</small>
+                    </div>
+                    <div class="datetime-section">
+                        <h4 class="datetime-title">📅 Date & Time (Optional)</h4>
+                        <div class="form-group">
+                            <label for="editCreatedDate-${id}" class="form-label">
+                                <span>Date Added</span>
+                                <span class="label-optional" aria-label="optional">(optional)</span>
+                            </label>
+                            <input 
+                                type="datetime-local" 
+                                id="editCreatedDate-${id}" 
+                                class="form-input"
+                                value="${createdDateValue}"
+                            >
+                        </div>
                     </div>
                     <div class="edit-actions">
-                        <button type="button" class="btn btn-secondary" id="cancelEdit-${id}">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save</button>
+                        <button type="button" class="btn btn-secondary" id="cancelEdit-${id}" aria-label="Cancel editing">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" aria-label="Save changes">
+                            Save Changes
+                        </button>
                     </div>
                 </form>
             </div>
         `;
 
         document.body.appendChild(modal);
-        modal.classList.add('active');
+        // Use setTimeout to trigger animation
+        setTimeout(() => modal.classList.add('active'), 10);
 
         // Focus on name input
-        document.getElementById(`editName-${id}`).focus();
+        const nameInput = document.getElementById(`editName-${id}`);
+        nameInput.focus();
+        nameInput.select();
 
         // Setup event listeners
         const form = document.getElementById(`editForm-${id}`);
-        const cancelBtn = document.getElementById(`cancelEdit-${id}`);
+        const closeBtn = document.getElementById(`closeEdit-${id}`);
         const backdrop = modal.querySelector('.edit-backdrop');
 
         const closeModal = () => {
-            modal.remove();
+            modal.classList.remove('active');
+            setTimeout(() => modal.remove(), 300);
+            document.removeEventListener('keydown', handleEscape);
         };
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const newName = document.getElementById(`editName-${id}`).value.trim();
             const newNotes = document.getElementById(`editNotes-${id}`).value.trim();
+            const newCreatedDate = document.getElementById(`editCreatedDate-${id}`).value;
 
             if (!newName) {
                 this.showStatus('Item name cannot be empty', 'error');
                 return;
             }
 
-            await this.updateItem(id, { name: newName, notes: newNotes });
+            const updates = { name: newName, notes: newNotes };
+
+            // If dates are provided, convert to ISO format
+            if (newCreatedDate) {
+                updates.createdAt = new Date(newCreatedDate).toISOString();
+            }
+
+            await this.updateItem(id, updates);
             closeModal();
         });
 
+        const cancelBtn = document.getElementById(`cancelEdit-${id}`);
+        closeBtn.addEventListener('click', closeModal);
         cancelBtn.addEventListener('click', closeModal);
-        backdrop.addEventListener('click', closeModal);
         
         // Close on Escape key
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
                 closeModal();
-                document.removeEventListener('keydown', handleEscape);
             }
         };
         document.addEventListener('keydown', handleEscape);
@@ -206,7 +275,8 @@ class LastSeenApp {
                 const item = this.items.find(i => i.id === id);
                 if (item) {
                     Object.assign(item, updates);
-                    item.updatedAt = new Date().toISOString();
+                    // Only modify timestamp if user explicitly changed date/time in editor
+                    // For name/notes only changes, preserve existing timestamp
                     updatedItem = item;
                     this.saveToLocalStorage();
                 }
@@ -220,14 +290,8 @@ class LastSeenApp {
                 if (!response.ok) throw new Error('Failed to update item');
                 updatedItem = await response.json();
                 
-                // Also touch the item to update the timestamp
-                const touchResponse = await fetch(`/api/items/${id}/touch`, {
-                    method: 'POST'
-                });
-                
-                if (touchResponse.ok) {
-                    updatedItem = await touchResponse.json();
-                }
+                // Don't automatically touch/update timestamp for name/notes changes
+                // Only the explicit date changes from the editor window will update timestamps
                 
                 const index = this.items.findIndex(i => i.id === id);
                 if (index !== -1) {
@@ -378,7 +442,7 @@ class LastSeenApp {
         const timeElement = document.querySelector(`.item-time[data-id="${itemId}"]`);
         if (!timeElement) return;
 
-        const timestamp = item.updatedAt || item.createdAt;
+        const timestamp = item.createdAt;
         timeElement.textContent = this.formatTimeAgo(new Date(timestamp));
     }
 
@@ -403,7 +467,7 @@ class LastSeenApp {
         const item = this.items.find(i => i.id === itemId);
         if (!item) return 60000; // default to 1 minute
 
-        const timestamp = item.updatedAt || item.createdAt;
+        const timestamp = item.createdAt;
         const now = new Date();
         const diffMs = now - new Date(timestamp);
         const diffMinutes = diffMs / (1000 * 60);
@@ -441,7 +505,7 @@ class LastSeenApp {
         const date = document.querySelector('.tooltip-date');
         const iso = document.querySelector('.tooltip-iso');
 
-        const timestamp = item.updatedAt || item.createdAt;
+        const timestamp = item.createdAt;
         const dateObj = new Date(timestamp);
 
         title.textContent = item.name;
