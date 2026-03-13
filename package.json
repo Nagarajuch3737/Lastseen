@@ -9,7 +9,9 @@
     "test": "node tests/time-formatting.test.js && node tests/integration.test.js",
     "test:watch": "jest --watch",
     "test:unit": "node tests/time-formatting.test.js",
-    "test:integration": "node tests/integration.test.js"
+    "test:integration": "node tests/integration.test.js",
+    "migrate": "node migrate-to-mysql.js",
+    "setup": "node setup.bat"
   },
   "keywords": ["tracking", "time", "last-seen"],
   "author": "",
@@ -17,7 +19,9 @@
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "mysql2": "^3.6.5",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
