@@ -1,41 +1,75 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs').promises;
-const path = require('path');
+const mysql = require('mysql2/promise');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_FILE = path.join(__dirname, 'data.json');
+
+// MySQL Connection Pool
+let pool;
+
+async function initializeDatabase() {
+  try {
+    pool = mysql.createPool({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT || 3306,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+
+    // Test connection
+    const connection = await pool.getConnection();
+    console.log('✓ Connected to MySQL Database');
+    connection.release();
+    
+    // Initialize tables
+    await createTablesIfNotExists();
+  } catch (error) {
+    console.error('✗ Database connection failed:', error.message);
+    process.exit(1);
+  }
+}
+
+async function createTablesIfNotExists() {
+  const connection = await pool.getConnection();
+  try {
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS items (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        notes TEXT,
+        createdAt VARCHAR(255) NOT NULL,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✓ Items table ready');
+  } finally {
+    connection.release();
+  }
+}
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Data storage functions
-async function loadData() {
-  try {
-    const data = await fs.readFile(DB_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    // If file doesn't exist, return empty array
-    return [];
-  }
-}
-
-async function saveData(data) {
-  await fs.writeFile(DB_FILE, JSON.stringify(data, null, 2));
-}
-
 // API Routes
 
 // GET /api/items - return all items
 app.get('/api/items', async (req, res) => {
   try {
-    const items = await loadData();
-    res.json(items);
+    const connection = await pool.getConnection();
+    const [rows] = await connection.execute('SELECT * FROM items ORDER BY createdAt DESC');
+    connection.release();
+    res.json(rows);
   } catch (error) {
+    console.error('Error fetching items:', error);
     res.status(500).json({ error: 'Failed to load items' });
   }
 });
@@ -49,19 +83,25 @@ app.post('/api/items', async (req, res) => {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    const newItem = {
-      id: uuidv4(),
+    const id = uuidv4();
+    const createdAt = new Date().toISOString();
+    const trimmedNotes = notes ? notes.trim() : '';
+
+    const connection = await pool.getConnection();
+    await connection.execute(
+      'INSERT INTO items (id, name, notes, createdAt) VALUES (?, ?, ?, ?)',
+      [id, name.trim(), trimmedNotes, createdAt]
+    );
+    connection.release();
+
+    res.status(201).json({
+      id,
       name: name.trim(),
-      notes: notes ? notes.trim() : '',
-      createdAt: new Date().toISOString()
-    };
-
-    const items = await loadData();
-    items.push(newItem);
-    await saveData(items);
-
-    res.status(201).json(newItem);
+      notes: trimmedNotes,
+      createdAt
+    });
   } catch (error) {
+    console.error('Error creating item:', error);
     res.status(500).json({ error: 'Failed to create item' });
   }
 });
@@ -72,35 +112,36 @@ app.patch('/api/items/:id', async (req, res) => {
     const { id } = req.params;
     const { name, notes, createdAt } = req.body;
 
-    const items = await loadData();
-    const itemIndex = items.findIndex(item => item.id === id);
+    const connection = await pool.getConnection();
 
-    if (itemIndex === -1) {
+    // Check if item exists
+    const [existing] = await connection.execute('SELECT * FROM items WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      connection.release();
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    if (name !== undefined) {
-      if (!name || name.trim() === '') {
-        return res.status(400).json({ error: 'Name cannot be empty' });
-      }
-      items[itemIndex].name = name.trim();
+    const item = existing[0];
+    const updatedName = name !== undefined ? name.trim() : item.name;
+    const updatedNotes = notes !== undefined ? (notes ? notes.trim() : '') : item.notes;
+    const updatedCreatedAt = createdAt !== undefined ? createdAt : item.createdAt;
+
+    if (updatedName === '') {
+      connection.release();
+      return res.status(400).json({ error: 'Name cannot be empty' });
     }
 
-    if (notes !== undefined) {
-      items[itemIndex].notes = notes ? notes.trim() : '';
-    }
+    await connection.execute(
+      'UPDATE items SET name = ?, notes = ?, createdAt = ? WHERE id = ?',
+      [updatedName, updatedNotes, updatedCreatedAt, id]
+    );
 
-    // Allow updating createdAt date
-    if (createdAt !== undefined) {
-      const date = new Date(createdAt);
-      if (!isNaN(date.getTime())) {
-        items[itemIndex].createdAt = date.toISOString();
-      }
-    }
+    const [updated] = await connection.execute('SELECT * FROM items WHERE id = ?', [id]);
+    connection.release();
 
-    await saveData(items);
-    res.json(items[itemIndex]);
+    res.json(updated[0]);
   } catch (error) {
+    console.error('Error updating item:', error);
     res.status(500).json({ error: 'Failed to update item' });
   }
 });
@@ -110,27 +151,46 @@ app.delete('/api/items/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const items = await loadData();
-    const itemIndex = items.findIndex(item => item.id === id);
-
-    if (itemIndex === -1) {
+    const connection = await pool.getConnection();
+    
+    // Check if item exists
+    const [existing] = await connection.execute('SELECT * FROM items WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      connection.release();
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    items.splice(itemIndex, 1);
-    await saveData(items);
+    await connection.execute('DELETE FROM items WHERE id = ?', [id]);
+    connection.release();
     res.status(204).send();
   } catch (error) {
+    console.error('Error deleting item:', error);
     res.status(500).json({ error: 'Failed to delete item' });
   }
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    connection.release();
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(503).json({ status: 'error', message: 'Database unavailable' });
+  }
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`LastSeen server running on http://localhost:${PORT}`);
-});
+async function startServer() {
+  try {
+    await initializeDatabase();
+    app.listen(PORT, () => {
+      console.log(`✓ LastSeen server running on http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
